@@ -2,7 +2,7 @@
 
 Bongo Cat overlay for streamers or just for fun. It tracks your keyboard and mouse activity and displays an animated cat on your screen.
 <br>
-![Bongo Cat](./images/kb-mouse/idle.png)
+![Bongo Cat](./images/kb-mouse/cat.png)
 
 ## Features
 
@@ -38,6 +38,17 @@ To install Bongo Cat and set it up as a system-wide command, follow these steps:
    export PATH="$HOME/.local/bin:$PATH"
    ```
 
+3. **Post-Installation (Linux):**
+   The installer adds your user to the `input` group and sets up udev rules. **You MUST logout and login again** (or restart) for these changes to take effect and run Bongo Cat without `sudo`.
+
+## Uninstallation
+
+To remove Bongo Cat from your system, run the installer with the `-u` flag:
+
+```bash
+./install.sh -u
+```
+
 ## Usage
 
 Run the overlay using the command:
@@ -46,7 +57,7 @@ Run the overlay using the command:
 bongocat
 ```
 
-*Note: On Linux, Bongo Cat requires root privileges to capture keyboard and mouse events. The command will automatically prompt for `sudo` if needed.*
+*Note: On Linux, Bongo Cat requires access to input devices. If you haven't restarted your session after installation, it will prompt for `sudo`.*
 
 ### Options
 
