@@ -63,15 +63,17 @@ class BongoCatWindow(QWidget):
         self.neutral = self.process_pixmap(self.original_neutral)
         self.responses = {name: self.process_pixmap(pm) for name, pm in self.original_responses.items()}
         
+        # Pre-calculate max dimensions to avoid doing it in every layout update
+        all_pixmaps = [self.neutral] + list(self.responses.values())
+        self.max_w = max(p.width() for p in all_pixmaps if p)
+        self.max_h = max(p.height() for p in all_pixmaps if p)
+        self._current_ww, self._current_wh = 0, 0
+
         self.is_mirrored = False
         self.next_mirror_at = self.click_count + random.randint(5, 10)
         self.last_press_time = 0
         self.alternator = itertools.cycle([self.responses.get('r', self.neutral), self.responses.get('l', self.neutral)])
         
-        # Timer for periodic stats saving to avoid lag on every click
-        self.save_timer = QTimer()
-        self.save_timer.timeout.connect(self.save_stats)
-        self.save_timer.start(5000) # Save every 5 seconds
         self._stats_changed = False
 
         self.initUI()
@@ -108,7 +110,8 @@ class BongoCatWindow(QWidget):
             return 0
 
     def save_stats(self, force=False):
-        if not force and not self._stats_changed:
+        # Only save if forced (exit/settings) or if we really want periodic saves (disabled for now)
+        if not force:
             return
             
         try:
@@ -186,11 +189,6 @@ class BongoCatWindow(QWidget):
         cw = self.counter_label.width()
         ch = self.counter_label.height()
         
-        # Recalculate max dimensions for the current scale
-        all_pixmaps = [self.neutral] + list(self.responses.values())
-        self.max_w = max(p.width() for p in all_pixmaps if p)
-        self.max_h = max(p.height() for p in all_pixmaps if p)
-
         ww = int(max(self.max_w, cw))
         
         # Determine if the cat is mostly upside down (rotation near 180 or -180)
@@ -199,29 +197,28 @@ class BongoCatWindow(QWidget):
 
         # Adjust overlap based on position and rotation
         if self.counter_pos == 'top':
-            # If upside down, paws are at the top, so we can overlap more
-            overlap = int((90 if is_upside_down else 5) * self.scale_factor)
+            overlap = int((90 if is_upside_down else 40) * self.scale_factor)
         else:
-            # If upside down, head is at the bottom, so we overlap less to not cover the face
-            overlap = int((5 if is_upside_down else 90) * self.scale_factor)
+            overlap = int((40 if is_upside_down else 90) * self.scale_factor)
             
         wh = int(self.max_h + ch - overlap)
         
-        # Add a small buffer to prevent clipping at edges during rotation or scaling
+        # Only resize the window if dimensions actually changed to save CPU/lag on Windows
         buffer = 5
-        self.setFixedSize(ww + buffer, wh + buffer)
+        if ww + buffer != self._current_ww or wh + buffer != self._current_wh:
+            self._current_ww, self._current_wh = ww + buffer, wh + buffer
+            self.setFixedSize(self._current_ww, self._current_wh)
         
         self.image_label.resize(int(iw), int(ih))
         
         if self.counter_pos == 'top':
             self.counter_label.move((ww - cw) // 2, 0)
             self.image_label.move((ww - iw) // 2, ch - overlap)
-            self.counter_label.raise_() # Ensure counter is above the image when at top
+            self.counter_label.raise_()
         else:
             self.image_label.move((ww - iw) // 2, 0)
             self.counter_label.move((ww - cw) // 2, self.max_h - overlap)
-            self.image_label.raise_() # Cat paws should be above the counter when at bottom
-            
+            self.image_label.raise_()            
     def update_display(self):
         img = self.neutral
         
@@ -315,6 +312,11 @@ class BongoCatWindow(QWidget):
             self.neutral = self.process_pixmap(self.original_neutral)
             self.responses = {name: self.process_pixmap(pm) for name, pm in self.original_responses.items()}
             
+            # Update max dimensions
+            all_pixmaps = [self.neutral] + list(self.responses.values())
+            self.max_w = max(p.width() for p in all_pixmaps if p)
+            self.max_h = max(p.height() for p in all_pixmaps if p)
+
             # CRITICAL: Re-initialize the alternator with newly scaled pixmaps
             self.alternator = itertools.cycle([self.responses.get('r', self.neutral), self.responses.get('l', self.neutral)])
             
@@ -472,15 +474,14 @@ def start():
             pass
 
     def on_mouse(event):
-        if isinstance(event, mouse.ButtonEvent):
-            if event.event_type == 'down':
-                event_queue.put(('mouse_down', event.button))
-            else:
-                event_queue.put(('mouse_up', event.button))
-
-    # Fix for slow mouse capture on Windows
-    # The mouse library on Windows can be slow if not handled carefully.
-    # We ensure the hooks are as lightweight as possible.
+        # Optimization: return immediately if not a button event to avoid lag on Windows
+        if not isinstance(event, mouse.ButtonEvent):
+            return
+            
+        if event.event_type == 'down':
+            event_queue.put(('mouse_down', event.button))
+        else:
+            event_queue.put(('mouse_up', event.button))
 
     def rehook():
         # Use exec to restart the process and re-identify devices from scratch
@@ -536,7 +537,7 @@ def start():
         if any_down:
             window.last_press_time = current_time
             window.update_display()
-        elif any_up or (current_time - window.last_press_time > 0.05):
+        elif any_up or (current_time - window.last_press_time > (0 if os.name == 'nt' else 0.05)):
             window.update_display()
 
     def watchdog():
@@ -554,7 +555,8 @@ def start():
 
     timer = QTimer()
     timer.timeout.connect(process_queue)
-    timer.start(10)
+    # Increase frequency on Windows to process events faster
+    timer.start(1 if os.name == 'nt' else 10)
 
     wd_timer = QTimer()
     wd_timer.timeout.connect(watchdog)
