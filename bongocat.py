@@ -68,6 +68,12 @@ class BongoCatWindow(QWidget):
         self.last_press_time = 0
         self.alternator = itertools.cycle([self.responses.get('r', self.neutral), self.responses.get('l', self.neutral)])
         
+        # Timer for periodic stats saving to avoid lag on every click
+        self.save_timer = QTimer()
+        self.save_timer.timeout.connect(self.save_stats)
+        self.save_timer.start(5000) # Save every 5 seconds
+        self._stats_changed = False
+
         self.initUI()
         
     def init_db(self):
@@ -101,13 +107,17 @@ class BongoCatWindow(QWidget):
             self.saved_x, self.saved_y = 100, 100
             return 0
 
-    def save_stats(self):
+    def save_stats(self, force=False):
+        if not force and not self._stats_changed:
+            return
+            
         try:
             pos = self.pos()
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("UPDATE stats SET clicks = ?, x = ?, y = ?, scale = ?, rotate = ?, pos = ? WHERE id = 1", 
                              (self.click_count, pos.x(), pos.y(), float(self.scale_factor), float(self.rotation), str(self.counter_pos)))
                 conn.commit()
+            self._stats_changed = False
         except Exception as e:
             print(f"Error saving stats: {e}")
 
@@ -274,6 +284,7 @@ class BongoCatWindow(QWidget):
             self.reinit_pixmaps()
             self.update_layout()
             self.update_display()
+            self._stats_changed = True
             self.save_stats()
 
     def set_rotate(self):
@@ -283,6 +294,7 @@ class BongoCatWindow(QWidget):
             self.reinit_pixmaps()
             self.update_layout()
             self.update_display()
+            self._stats_changed = True
             self.save_stats()
 
     def set_counter_pos(self):
@@ -294,6 +306,7 @@ class BongoCatWindow(QWidget):
             # Re-apply window flags and show to ensure mouse events are still captured
             self.show()
             self.update_display()
+            self._stats_changed = True
             self.save_stats()
 
     def reinit_pixmaps(self):
@@ -329,12 +342,8 @@ class BongoCatWindow(QWidget):
     def mouseMoveEvent(self, event):
         if event.buttons() == Qt.MouseButton.LeftButton:
             new_pos = event.globalPosition().toPoint() - self.drag_pos
-            
-            # By default, Qt might try to keep windows within the desktop geometry
-            # especially with certain window flags. We just call move() and let it go.
-            # To ensure it can go "under" or "on" the taskbar, we rely on the window flags set in initUI.
             self.move(new_pos)
-            self.save_stats()
+            self._stats_changed = True
             event.accept()
 
 def load_assets(default, path):
@@ -478,7 +487,7 @@ def start():
         # This is the most reliable way as it clears all library internal states and file descriptors
         print("Restarting Bongo Cat to re-identify devices...")
         try:
-            window.save_stats()
+            window.save_stats(force=True)
             # On Windows, os.execv doesn't work the same way as on Unix.
             # We use subprocess to start a new process and exit the current one.
             if os.name == 'nt':
@@ -513,7 +522,7 @@ def start():
                     
                     if any_down:
                         window.click_count += 1
-                        window.save_stats()
+                        window._stats_changed = True
                 
                 elif etype == 'key_up':
                     window.active_keys.discard(data)
