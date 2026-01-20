@@ -54,18 +54,19 @@ BIN_DIR="$HOME/.local/bin"
 mkdir -p "$BIN_DIR"
 
 # Configure python to have permissions to read raw input without global sudo
-# We use setcap to allow the venv python to access input devices
-echo -e "${BLUE}Requesting sudo to set capabilities for the virtual environment...${NC}"
-# We need to resolve the symlink because setcap doesn't work on symlinks
+# We use chmod +s to allow the venv python to run with owner (root) privileges
+echo -e "${BLUE}Requesting sudo to set permissions for the virtual environment...${NC}"
+# We need to resolve the symlink because setuid doesn't work on symlinks
 REAL_PYTHON=$(readlink -f "$INSTALL_DIR/.venv/bin/python3")
-# Syntax: setcap [capabilities] [file]
-sudo setcap cap_dac_override,cap_sys_rawio,cap_net_raw+ep "$REAL_PYTHON"
+# Set ownership to root and add setuid bit
+sudo chown root:root "$REAL_PYTHON"
+sudo chmod +s "$REAL_PYTHON"
 
 cat << EOF > "$BIN_DIR/bongocat"
 #!/bin/bash
 # Run bongo cat from its installation directory so it can find assets
 cd "$INSTALL_DIR"
-# Use the venv python directly (it has the capabilities set)
+# The python executable has setuid bit, so it runs as root even when called by user
 "$INSTALL_DIR/.venv/bin/python3" "$INSTALL_DIR/bongocat.py" "\$@"
 EOF
 
