@@ -1,4 +1,3 @@
-
 """Bongo Cat Overlay
 
 Usage:
@@ -218,6 +217,7 @@ class BongoCatWindow(QWidget):
             self.image_label.move((ww - iw) // 2, 0)
             self.counter_label.move((ww - cw) // 2, self.max_h - overlap)
             self.image_label.raise_()            
+
     def update_display(self):
         img = self.neutral
         
@@ -508,9 +508,14 @@ def start():
         current_time = time.time()
         any_down = False
         any_up = False
+        
+        start_t = time.perf_counter()
 
         while True:
             try:
+                if time.perf_counter() - start_t > 0.005:
+                    break
+
                 etype, data = event_queue.get_nowait()
                 if etype in ('key_down', 'mouse_down'):
                     event_triggered_click = False
@@ -530,6 +535,9 @@ def start():
                     if event_triggered_click:
                         window.click_count += 1
                         window._stats_changed = True
+
+                    if any_down:
+                        break
                 
                 elif etype == 'key_up':
                     window.active_keys.discard(data)
@@ -547,7 +555,8 @@ def start():
             window.update_display()
         # Return to neutral state after a delay
         elif window.active_keys or window.active_mouse:
-            if current_time - window.last_press_time > (0.01 if os.name == 'nt' else 0.05):
+            delay = 0.02 if os.name == 'nt' else 0.05
+            if current_time - window.last_press_time > delay:
                 window.update_display()
 
     def watchdog():
@@ -564,17 +573,10 @@ def start():
             if valid_keys != window.active_keys:
                 window.active_keys = valid_keys
                 changed = True
-        
+
         if window.active_mouse:
-            valid_mouse = set()
-            for b in window.active_mouse:
-                try:
-                    if mouse.is_pressed(b):
-                        valid_mouse.add(b)
-                except:
-                    pass
-            if valid_mouse != window.active_mouse:
-                window.active_mouse = valid_mouse
+            if time.time() - window.last_press_time > 1.0:
+                window.active_mouse.clear()
                 changed = True
 
         if changed:
