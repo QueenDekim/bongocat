@@ -22,6 +22,7 @@ import random
 import queue
 import time
 import sqlite3
+import threading
 from PyQt6.QtWidgets import QApplication, QLabel, QWidget, QMenu
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QTransform, QAction
 from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QObject, QTimer
@@ -268,6 +269,17 @@ def load_assets(default, path):
     return neutral, responses
 
 def start():
+    # Suppress scary OSError [Errno 19] when devices are disconnected
+    # We monkey-patch the thread exception handler
+    def handle_thread_exception(args):
+        if isinstance(args.exc_value, OSError) and args.exc_value.errno == 19:
+            print("Device disconnected.")
+        else:
+            # Default behavior for other exceptions
+            sys.__excepthook__(args.exc_type, args.exc_value, args.exc_traceback)
+
+    threading.excepthook = handle_thread_exception
+
     import docopt
     
     # Check for root privileges on Linux as it's required for keyboard/mouse hooking
@@ -327,11 +339,14 @@ def start():
                 event_queue.put(('mouse_up', event.button))
 
     def rehook():
-        keyboard.unhook_all()
-        mouse.unhook_all()
-        keyboard.hook(on_key)
-        mouse.hook(on_mouse)
-        print("Devices re-identified.")
+        # Use exec to restart the process and re-identify devices from scratch
+        # This is the most reliable way as it clears all library internal states and file descriptors
+        print("Restarting Bongo Cat to re-identify devices...")
+        try:
+            window.save_stats()
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            print(f"Error restarting: {e}")
 
     window.rehook_callback = rehook
     
