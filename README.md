@@ -17,7 +17,7 @@ To install Bongo Cat and set it up as a system-wide command, follow these steps:
 1. **Quick Install (curl | bash):**
 
    ```bash
-   curl -sSL https://raw.githubusercontent.com/queendekim/bongocat/master/install.sh | bash
+   curl -sSL https://raw.githubusercontent.com/queendekim/bongocat/master/install.sh | sudo bash
    ```
 
    **Or install manually:**
