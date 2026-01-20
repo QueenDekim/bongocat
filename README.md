@@ -1,8 +1,8 @@
 # Bongo Cat Overlay
 
 Bongo Cat overlay for streamers or just for fun. It tracks your keyboard and mouse activity and displays an animated cat on your screen.
-
-![Bongo Cat](https://github.com/Exahilosys/bongocat/raw/master/images/kb-mouse/idle.png)
+<br>
+![Bongo Cat](./images/kb-mouse/idle.png)
 
 ## Features
 
