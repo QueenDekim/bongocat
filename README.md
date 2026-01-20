@@ -120,6 +120,9 @@ You can customize the images by modifying the files in `/opt/bongocat/images/kb-
 - `idle.png`: The neutral state.
 - `l.png` and `r.png`: The states for left and right paw actions.
 
+## Known issues:
+- Problem registering rapid mouse clicks on Windows
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](./LICENCE) file for details.
