@@ -58,7 +58,8 @@ mkdir -p "$BIN_DIR"
 echo -e "${BLUE}Requesting sudo to set capabilities for the virtual environment...${NC}"
 # We need to resolve the symlink because setcap doesn't work on symlinks
 REAL_PYTHON=$(readlink -f "$INSTALL_DIR/.venv/bin/python3")
-sudo setcap 'cap_dac_override,cap_sys_rawio,cap_net_raw+ep' "$REAL_PYTHON"
+# Syntax: setcap [capabilities] [file]
+sudo setcap cap_dac_override,cap_sys_rawio,cap_net_raw+ep "$REAL_PYTHON"
 
 cat << EOF > "$BIN_DIR/bongocat"
 #!/bin/bash
