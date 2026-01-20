@@ -1,7 +1,6 @@
 #!/bin/bash
 
-# Bongo Cat Installation Script
-# This script installs Bongo Cat and its dependencies, then creates a system-wide command.
+# Bongo Cat Installation/Uninstallation Script
 
 set -e
 
@@ -10,6 +9,42 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
+
+INSTALL_DIR="$HOME/.local/share/bongocat"
+BIN_DIR="$HOME/.local/bin"
+
+# Function to uninstall
+uninstall() {
+    echo -e "${BLUE}Uninstalling Bongo Cat...${NC}"
+    
+    if [ -f "$BIN_DIR/bongocat" ]; then
+        rm "$BIN_DIR/bongocat"
+        echo -e "${GREEN}Removed launcher script.${NC}"
+    fi
+    
+    if [ -d "$INSTALL_DIR" ]; then
+        # We need sudo to remove the root-owned python binary in venv
+        echo -e "${BLUE}Requesting sudo to remove installation files...${NC}"
+        sudo rm -rf "$INSTALL_DIR"
+        echo -e "${GREEN}Removed installation directory.${NC}"
+    fi
+    
+    echo -e "${GREEN}Uninstallation complete!${NC}"
+    exit 0
+}
+
+# Check for arguments
+while getopts "u" opt; do
+  case $opt in
+    u)
+      uninstall
+      ;;
+    \?)
+      echo "Usage: $0 [-u]"
+      exit 1
+      ;;
+  esac
+done
 
 echo -e "${BLUE}Starting Bongo Cat installation...${NC}"
 
@@ -24,10 +59,7 @@ if ! command -v git &> /dev/null; then
     exit 1
 fi
 
-# 2. Define installation directory
-INSTALL_DIR="$HOME/.local/share/bongocat"
-
-# 3. Clone or update the repository
+# 2. Clone or update the repository
 if [ -d "$INSTALL_DIR" ]; then
     echo -e "${BLUE}Updating existing installation in $INSTALL_DIR...${NC}"
     cd "$INSTALL_DIR"
@@ -38,23 +70,20 @@ else
     cd "$INSTALL_DIR"
 fi
 
-# 4. Create virtual environment and install dependencies
+# 3. Create virtual environment and install dependencies
 echo -e "${BLUE}Setting up virtual environment and installing dependencies...${NC}"
 python3 -m venv .venv
 source .venv/bin/activate
 
 # Install required packages
-# Note: PyQt6 is used in the code but not in install_requires in setup.py, adding it here.
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# 5. Create the launcher script
+# 4. Create the launcher script
 echo -e "${BLUE}Creating launcher script and setting permissions...${NC}"
-BIN_DIR="$HOME/.local/bin"
 mkdir -p "$BIN_DIR"
 
 # Configure python to have permissions to read raw input without global sudo
-# We use chmod +s to allow the venv python to run with owner (root) privileges
 echo -e "${BLUE}Requesting sudo to set permissions for the virtual environment...${NC}"
 # We need to resolve the symlink because setuid doesn't work on symlinks
 REAL_PYTHON=$(readlink -f "$INSTALL_DIR/.venv/bin/python3")
@@ -72,7 +101,7 @@ EOF
 
 chmod +x "$BIN_DIR/bongocat"
 
-# 6. Final instructions
+# 5. Final instructions
 echo -e "${GREEN}Installation complete!${NC}"
 echo -e "You can now run Bongo Cat using the command: ${BLUE}bongocat${NC}"
 
@@ -82,4 +111,4 @@ if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     echo -e "Add this line to your .bashrc or .zshrc:"
     echo -e "${BLUE}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
 fi
-"
+
