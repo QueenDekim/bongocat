@@ -110,7 +110,6 @@ class BongoCatWindow(QWidget):
             return 0
 
     def save_stats(self, force=False):
-        # Only save if forced (exit/settings) or if we really want periodic saves (disabled for now)
         if not force:
             return
             
@@ -282,7 +281,7 @@ class BongoCatWindow(QWidget):
             self.update_layout()
             self.update_display()
             self._stats_changed = True
-            self.save_stats()
+            self.save_stats(force=True)
 
     def set_rotate(self):
         val, ok = QInputDialog.getInt(self, "Rotate", "Degrees (-360 - 360):", int(self.rotation), -360, 360, 1, Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.X11BypassWindowManagerHint)
@@ -292,7 +291,7 @@ class BongoCatWindow(QWidget):
             self.update_layout()
             self.update_display()
             self._stats_changed = True
-            self.save_stats()
+            self.save_stats(force=True)
 
     def set_counter_pos(self):
         items = ["top", "bottom"]
@@ -304,7 +303,7 @@ class BongoCatWindow(QWidget):
             self.show()
             self.update_display()
             self._stats_changed = True
-            self.save_stats()
+            self.save_stats(force=True)
 
     def reinit_pixmaps(self):
         # We need to reload the original pixmaps to re-process them with new scale/rotate
@@ -474,14 +473,17 @@ def start():
             pass
 
     def on_mouse(event):
-        # Optimization: return immediately if not a button event to avoid lag on Windows
-        if not isinstance(event, mouse.ButtonEvent):
+        # Fastest possible check to ignore movement events which are very frequent
+        if type(event) is not mouse.ButtonEvent:
             return
             
-        if event.event_type == 'down':
-            event_queue.put(('mouse_down', event.button))
-        else:
-            event_queue.put(('mouse_up', event.button))
+        try:
+            if event.event_type == 'down':
+                event_queue.put(('mouse_down', event.button))
+            else:
+                event_queue.put(('mouse_up', event.button))
+        except:
+            pass
 
     def rehook():
         # Use exec to restart the process and re-identify devices from scratch
@@ -511,17 +513,21 @@ def start():
             try:
                 etype, data = event_queue.get_nowait()
                 if etype in ('key_down', 'mouse_down'):
+                    event_triggered_click = False
                     if etype == 'key_down':
                         if data not in window.active_keys:
                             window.active_keys.add(data)
                             window.kb_mapping[data] = next(window.alternator)
                             any_down = True
+                            event_triggered_click = True
                     else:
-                        if data not in window.active_mouse:
+                        # For mouse on Windows, we count every down event as a click
+                        if os.name == 'nt' or data not in window.active_mouse:
                             window.active_mouse.add(data)
                             any_down = True
+                            event_triggered_click = True
                     
-                    if any_down:
+                    if event_triggered_click:
                         window.click_count += 1
                         window._stats_changed = True
                 
@@ -534,13 +540,18 @@ def start():
             except queue.Empty:
                 break
 
-        if any_down:
-            window.last_press_time = current_time
+        # Update UI only if state changed
+        if any_down or any_up:
+            if any_down:
+                window.last_press_time = current_time
             window.update_display()
-        elif any_up or (current_time - window.last_press_time > (0 if os.name == 'nt' else 0.05)):
-            window.update_display()
+        # Return to neutral state after a delay
+        elif window.active_keys or window.active_mouse:
+            if current_time - window.last_press_time > (0.01 if os.name == 'nt' else 0.05):
+                window.update_display()
 
     def watchdog():
+        changed = False
         if window.active_keys:
             # Filter out unknown keys and handle potential library errors
             valid_keys = set()
@@ -550,7 +561,23 @@ def start():
                         valid_keys.add(k)
                 except:
                     pass
-            window.active_keys = valid_keys
+            if valid_keys != window.active_keys:
+                window.active_keys = valid_keys
+                changed = True
+        
+        if window.active_mouse:
+            valid_mouse = set()
+            for b in window.active_mouse:
+                try:
+                    if mouse.is_pressed(b):
+                        valid_mouse.add(b)
+                except:
+                    pass
+            if valid_mouse != window.active_mouse:
+                window.active_mouse = valid_mouse
+                changed = True
+
+        if changed:
             window.update_display()
 
     timer = QTimer()

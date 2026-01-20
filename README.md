@@ -55,7 +55,7 @@ If you want to build the executable manually on Windows:
 1.  Install Python 3.10+.
 2.  Install dependencies:
     ```bash
-    pip install -r requirements.txt
+    pip install -r requirements-windows.txt
     ```
 3.  Run PyInstaller using the provided spec file:
     ```bash
