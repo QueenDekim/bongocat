@@ -48,7 +48,7 @@ To install Bongo Cat and set it up as a system-wide command, follow these steps:
 To remove Bongo Cat from your system, run the installer with the `-u` flag:
 
 ```bash
-./install.sh -u
+sudo /opt/bongocat/install.sh -u
 ```
 
 ## Usage
