@@ -39,6 +39,10 @@ To install Bongo Cat and set it up as a system-wide command, follow these steps:
 3. **Post-Installation (Linux):**
    The installer adds your user to the `input` group and sets up udev rules. **You MUST logout and login again** (or restart) for these changes to take effect and run Bongo Cat without `sudo`.
 
+## Preview
+
+![cat](./assets/preview/cat.mp4)
+
 ## Uninstallation
 
 To remove Bongo Cat from your system, run the installer with the `-u` flag:
