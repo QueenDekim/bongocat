@@ -23,7 +23,7 @@ import queue
 import time
 import sqlite3
 import threading
-from PyQt6.QtWidgets import QApplication, QLabel, QWidget, QMenu
+from PyQt6.QtWidgets import QApplication, QLabel, QWidget, QMenu, QInputDialog
 from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QTransform, QAction
 from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QObject, QTimer
 
@@ -33,6 +33,10 @@ class BongoCatWindow(QWidget):
     def __init__(self, neutral_pixmap, responses_pixmaps, scale, rotate, counter_pos):
         super().__init__()
         
+        # Store original pixmaps for re-scaling/rotating in settings
+        self.original_neutral = neutral_pixmap
+        self.original_responses = responses_pixmaps
+
         # Determine the database path, respecting the real user if running with sudo
         home = os.path.expanduser("~")
         if os.environ.get("SUDO_USER") and os.name == 'posix':
@@ -44,18 +48,21 @@ class BongoCatWindow(QWidget):
         
         self.db_path = os.path.join(home, ".bongocat_stats.db")
         self.init_db()
+        
+        # Initial values from command line (might be overridden by load_clicks)
         self.scale_factor = scale
         self.rotation = rotate
         self.counter_pos = counter_pos
-        
-        # Pre-process pixmaps with scale and rotation
-        self.neutral = self.process_pixmap(neutral_pixmap)
-        self.responses = {name: self.process_pixmap(pm) for name, pm in responses_pixmaps.items()}
         
         self.active_keys = set()
         self.active_mouse = set()
         self.kb_mapping = {}
         self.click_count = self.load_clicks()
+        
+        # Pre-process pixmaps with scale and rotation
+        self.neutral = self.process_pixmap(self.original_neutral)
+        self.responses = {name: self.process_pixmap(pm) for name, pm in self.original_responses.items()}
+        
         self.is_mirrored = False
         self.next_mirror_at = self.click_count + random.randint(5, 10)
         self.last_press_time = 0
@@ -68,25 +75,26 @@ class BongoCatWindow(QWidget):
             conn.execute("CREATE TABLE IF NOT EXISTS stats (id INTEGER PRIMARY KEY, clicks INTEGER)")
             
             # Update table if columns are missing (for existing users)
-            try:
-                conn.execute("ALTER TABLE stats ADD COLUMN x INTEGER DEFAULT 100")
-            except sqlite3.OperationalError:
-                pass
-            try:
-                conn.execute("ALTER TABLE stats ADD COLUMN y INTEGER DEFAULT 100")
-            except sqlite3.OperationalError:
-                pass
+            for column, default in [("x", 100), ("y", 100), ("scale", 1.0), ("rotate", 0.0), ("pos", "'bottom'")]:
+                try:
+                    conn.execute(f"ALTER TABLE stats ADD COLUMN {column} {type(default).__name__} DEFAULT {default}")
+                except sqlite3.OperationalError:
+                    pass
 
-            conn.execute("INSERT OR IGNORE INTO stats (id, clicks, x, y) VALUES (1, 0, 100, 100)")
+            conn.execute("INSERT OR IGNORE INTO stats (id, clicks, x, y, scale, rotate, pos) VALUES (1, 0, 100, 100, 1.0, 0.0, 'bottom')")
 
     def load_clicks(self):
         try:
             with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.execute("SELECT clicks, x, y FROM stats WHERE id = 1")
+                cursor = conn.execute("SELECT clicks, x, y, scale, rotate, pos FROM stats WHERE id = 1")
                 row = cursor.fetchone()
                 if row:
                     self.saved_x = row[1]
                     self.saved_y = row[2]
+                    # Apply DB values to the instance
+                    self.scale_factor = row[3]
+                    self.rotation = row[4]
+                    self.counter_pos = row[5]
                     return row[0]
                 return 0
         except:
@@ -97,10 +105,11 @@ class BongoCatWindow(QWidget):
         try:
             pos = self.pos()
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute("UPDATE stats SET clicks = ?, x = ?, y = ? WHERE id = 1", 
-                             (self.click_count, pos.x(), pos.y()))
-        except:
-            pass
+                conn.execute("UPDATE stats SET clicks = ?, x = ?, y = ?, scale = ?, rotate = ?, pos = ? WHERE id = 1", 
+                             (self.click_count, pos.x(), pos.y(), float(self.scale_factor), float(self.rotation), str(self.counter_pos)))
+                conn.commit()
+        except Exception as e:
+            print(f"Error saving stats: {e}")
 
     def process_pixmap(self, pixmap):
         if pixmap is None:
@@ -124,7 +133,13 @@ class BongoCatWindow(QWidget):
         return pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
 
     def initUI(self):
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool | Qt.WindowType.X11BypassWindowManagerHint)
+        # We use X11BypassWindowManagerHint again but only for Linux to allow off-screen movement
+        # On Windows, FramelessWindowHint is usually enough.
+        flags = Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
+        if os.name == 'posix':
+            flags |= Qt.WindowType.X11BypassWindowManagerHint
+            
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         
         self.image_label = QLabel(self)
@@ -161,21 +176,41 @@ class BongoCatWindow(QWidget):
         cw = self.counter_label.width()
         ch = self.counter_label.height()
         
+        # Recalculate max dimensions for the current scale
+        all_pixmaps = [self.neutral] + list(self.responses.values())
+        self.max_w = max(p.width() for p in all_pixmaps if p)
+        self.max_h = max(p.height() for p in all_pixmaps if p)
+
         ww = int(max(self.max_w, cw))
-        overlap = int(90 * self.scale_factor)
-        wh = int(self.max_h + ch - overlap)        
-        self.setFixedSize(ww, wh)
+        
+        # Determine if the cat is mostly upside down (rotation near 180 or -180)
+        rot_norm = abs(self.rotation % 360)
+        is_upside_down = rot_norm > 90 and rot_norm < 270
+
+        # Adjust overlap based on position and rotation
+        if self.counter_pos == 'top':
+            # If upside down, paws are at the top, so we can overlap more
+            overlap = int((90 if is_upside_down else 5) * self.scale_factor)
+        else:
+            # If upside down, head is at the bottom, so we overlap less to not cover the face
+            overlap = int((5 if is_upside_down else 90) * self.scale_factor)
+            
+        wh = int(self.max_h + ch - overlap)
+        
+        # Add a small buffer to prevent clipping at edges during rotation or scaling
+        buffer = 5
+        self.setFixedSize(ww + buffer, wh + buffer)
         
         self.image_label.resize(int(iw), int(ih))
         
         if self.counter_pos == 'top':
             self.counter_label.move((ww - cw) // 2, 0)
-            self.image_label.move(0, ch - overlap)
+            self.image_label.move((ww - iw) // 2, ch - overlap)
+            self.counter_label.raise_() # Ensure counter is above the image when at top
         else:
-            self.image_label.move(0, 0)
+            self.image_label.move((ww - iw) // 2, 0)
             self.counter_label.move((ww - cw) // 2, self.max_h - overlap)
-            
-        self.image_label.raise_()
+            self.image_label.raise_() # Cat paws should be above the counter when at bottom
             
     def update_display(self):
         img = self.neutral
@@ -204,6 +239,22 @@ class BongoCatWindow(QWidget):
     def contextMenuEvent(self, event):
         menu = QMenu(self)
         
+        settings_menu = menu.addMenu("Settings")
+        
+        scale_action = QAction("Scale", self)
+        scale_action.triggered.connect(self.set_scale)
+        settings_menu.addAction(scale_action)
+        
+        rotate_action = QAction("Rotate", self)
+        rotate_action.triggered.connect(self.set_rotate)
+        settings_menu.addAction(rotate_action)
+        
+        pos_action = QAction("Counter Position", self)
+        pos_action.triggered.connect(self.set_counter_pos)
+        settings_menu.addAction(pos_action)
+
+        menu.addSeparator()
+        
         fix_action = QAction("Fix device identification", self)
         fix_action.triggered.connect(self.fix_devices)
         
@@ -216,21 +267,59 @@ class BongoCatWindow(QWidget):
         
         menu.exec(event.globalPos())
 
+    def set_scale(self):
+        val, ok = QInputDialog.getDouble(self, "Scale", "Factor (0.1 - 1.0):", self.scale_factor, 0.1, 1.0, 2, Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.X11BypassWindowManagerHint)
+        if ok:
+            self.scale_factor = val
+            self.reinit_pixmaps()
+            self.update_layout()
+            self.update_display()
+            self.save_stats()
+
+    def set_rotate(self):
+        val, ok = QInputDialog.getInt(self, "Rotate", "Degrees (-360 - 360):", int(self.rotation), -360, 360, 1, Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.X11BypassWindowManagerHint)
+        if ok:
+            self.rotation = float(val)
+            self.reinit_pixmaps()
+            self.update_layout()
+            self.update_display()
+            self.save_stats()
+
+    def set_counter_pos(self):
+        items = ["top", "bottom"]
+        val, ok = QInputDialog.getItem(self, "Counter Position", "Select position:", items, items.index(self.counter_pos), False, Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.X11BypassWindowManagerHint)
+        if ok:
+            self.counter_pos = val.lower()
+            self.update_layout()
+            # Re-apply window flags and show to ensure mouse events are still captured
+            self.show()
+            self.update_display()
+            self.save_stats()
+
+    def reinit_pixmaps(self):
+        # We need to reload the original pixmaps to re-process them with new scale/rotate
+        if hasattr(self, 'original_neutral'):
+            self.neutral = self.process_pixmap(self.original_neutral)
+            self.responses = {name: self.process_pixmap(pm) for name, pm in self.original_responses.items()}
+            
+            # CRITICAL: Re-initialize the alternator with newly scaled pixmaps
+            self.alternator = itertools.cycle([self.responses.get('r', self.neutral), self.responses.get('l', self.neutral)])
+            
+            # Update counter label style for new scale
+            self.counter_label.setStyleSheet(f"""
+                color: #333333; 
+                font-family: Helvetica; 
+                font-size: {int(40 * self.scale_factor)}pt; 
+                font-weight: bold; 
+                padding: 1px 3px;
+                background-color: white;
+                border: 2px solid #333333;
+                border-radius: 5%;
+            """)
+
     def fix_devices(self):
-        import keyboard
-        import mouse
-        try:
-            keyboard.unhook_all()
-            mouse.unhook_all()
-            # The hooks will be re-established in the start() function's context if we use a signal
-            # but since we are in a different scope, we'll emit a custom signal or just call the hooks again.
-            # However, start() is not a class, so let's use a simpler approach: 
-            # keyboard.hook and mouse.hook are global in the library.
-            # We need to pass the callback functions here.
-            if hasattr(self, 'rehook_callback'):
-                self.rehook_callback()
-        except Exception as e:
-            print(f"Error re-hooking devices: {e}")
+        if hasattr(self, 'rehook_callback'):
+            self.rehook_callback()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -239,7 +328,12 @@ class BongoCatWindow(QWidget):
 
     def mouseMoveEvent(self, event):
         if event.buttons() == Qt.MouseButton.LeftButton:
-            self.move(event.globalPosition().toPoint() - self.drag_pos)
+            new_pos = event.globalPosition().toPoint() - self.drag_pos
+            
+            # By default, Qt might try to keep windows within the desktop geometry
+            # especially with certain window flags. We just call move() and let it go.
+            # To ensure it can go "under" or "on" the taskbar, we rely on the window flags set in initUI.
+            self.move(new_pos)
             self.save_stats()
             event.accept()
 
@@ -328,7 +422,32 @@ def start():
         counter_pos = 'bottom'
     
     neutral, responses = load_assets(default, path)
+    
+    # Initialize window with CLI args first
     window = BongoCatWindow(neutral, responses, scale, rotate, counter_pos)
+    
+    # Now, if CLI args were NOT provided (i.e. they are at their default values),
+    # we attempt to load saved settings from the DB.
+    try:
+        with sqlite3.connect(window.db_path) as conn:
+            cursor = conn.execute("SELECT scale, rotate, pos FROM stats WHERE id = 1")
+            row = cursor.fetchone()
+            if row:
+                # Check if each argument was actually provided by the user
+                # docopt.docopt() returns the default string from __doc__ if the arg is missing.
+                if arguments['--scale'] is None: 
+                    window.scale_factor = float(row[0])
+                if arguments['--rotate'] is None: 
+                    window.rotation = float(row[1])
+                if arguments['--counter-position'] is None: 
+                    window.counter_pos = str(row[2])
+                
+                # Force re-processing if we loaded anything from DB
+                window.reinit_pixmaps()
+                window.update_layout()
+    except Exception as e:
+        print(f"Debug: DB load error: {e}")
+
     event_queue = queue.Queue()
 
     def on_key(event):
@@ -350,13 +469,24 @@ def start():
             else:
                 event_queue.put(('mouse_up', event.button))
 
+    # Fix for slow mouse capture on Windows
+    # The mouse library on Windows can be slow if not handled carefully.
+    # We ensure the hooks are as lightweight as possible.
+
     def rehook():
         # Use exec to restart the process and re-identify devices from scratch
         # This is the most reliable way as it clears all library internal states and file descriptors
         print("Restarting Bongo Cat to re-identify devices...")
         try:
             window.save_stats()
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            # On Windows, os.execv doesn't work the same way as on Unix.
+            # We use subprocess to start a new process and exit the current one.
+            if os.name == 'nt':
+                import subprocess
+                subprocess.Popen([sys.executable] + sys.argv)
+                app.quit()
+            else:
+                os.execv(sys.executable, [sys.executable] + sys.argv)
         except Exception as e:
             print(f"Error restarting: {e}")
 
@@ -402,7 +532,15 @@ def start():
 
     def watchdog():
         if window.active_keys:
-            window.active_keys = {k for k in window.active_keys if keyboard.is_pressed(k)}
+            # Filter out unknown keys and handle potential library errors
+            valid_keys = set()
+            for k in window.active_keys:
+                try:
+                    if k != 'unknown' and keyboard.is_pressed(k):
+                        valid_keys.add(k)
+                except:
+                    pass
+            window.active_keys = valid_keys
             window.update_display()
 
     timer = QTimer()
