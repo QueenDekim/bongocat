@@ -234,6 +234,14 @@ def load_assets(default, path):
 
 def start():
     import docopt
+    
+    # Check for root privileges on Linux as it's required for keyboard/mouse hooking
+    if os.name == 'posix' and os.geteuid() != 0:
+        print("Error: Bongo Cat requires root privileges to capture keyboard and mouse events on Linux.")
+        print("Please run it with sudo:")
+        print(f"    sudo {sys.argv[0]} {' '.join(sys.argv[1:])}")
+        sys.exit(1)
+
     import keyboard
     import mouse
 

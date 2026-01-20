@@ -14,8 +14,8 @@ NC='\033[0m' # No Color
 REAL_USER=${SUDO_USER:-$USER}
 REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 
-INSTALL_DIR="$REAL_HOME/.local/share/bongocat"
-BIN_DIR="$REAL_HOME/.local/bin"
+INSTALL_DIR="/opt/bongocat"
+BIN_DIR="/usr/local/bin"
 
 # Function to uninstall
 uninstall() {
@@ -29,6 +29,13 @@ uninstall() {
     if [ -d "$INSTALL_DIR" ]; then
         rm -rf "$INSTALL_DIR"
         echo -e "${GREEN}Removed installation directory.${NC}"
+    fi
+
+    # Remove udev rules on uninstall
+    if [ -f "/etc/udev/rules.d/99-input.rules" ]; then
+        rm "/etc/udev/rules.d/99-input.rules"
+        sudo udevadm control --reload-rules && sudo udevadm trigger
+        echo -e "${GREEN}Removed udev rules.${NC}"
     fi
 
     if [ -f "$REAL_HOME/Desktop/bongocat.desktop" ]; then
@@ -70,27 +77,26 @@ fi
 if [ -d "$INSTALL_DIR" ]; then
     echo -e "${BLUE}Updating existing installation in $INSTALL_DIR...${NC}"
     cd "$INSTALL_DIR"
-    sudo -u "$REAL_USER" git pull
+    git pull
 else
     echo -e "${BLUE}Cloning repository to $INSTALL_DIR...${NC}"
-    mkdir -p "$(dirname "$INSTALL_DIR")"
-    chown "$REAL_USER:$REAL_USER" "$(dirname "$INSTALL_DIR")" || true
-    sudo -u "$REAL_USER" git clone https://github.com/queendekim/bongocat "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
+    git clone https://github.com/queendekim/bongocat "$INSTALL_DIR"
     cd "$INSTALL_DIR"
 fi
 
 # 3. Create virtual environment and install dependencies
 echo -e "${BLUE}Setting up virtual environment and installing dependencies...${NC}"
-sudo -u "$REAL_USER" python3 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 
-# Install required packages as real user to avoid permission issues in cache
-sudo -u "$REAL_USER" "$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
-sudo -u "$REAL_USER" "$INSTALL_DIR/.venv/bin/pip" install -r requirements.txt
+# Install required packages
+"$INSTALL_DIR/.venv/bin/pip" install --upgrade pip
+"$INSTALL_DIR/.venv/bin/pip" install -r requirements.txt
 
 # 4. Create the launcher script
 echo -e "${BLUE}Creating launcher script and setting permissions...${NC}"
-sudo -u "$REAL_USER" mkdir -p "$BIN_DIR"
+mkdir -p "$BIN_DIR"
 
 # Check if user is in 'input' group for raw access
 if ! groups "$REAL_USER" | grep &>/dev/null "\binput\b"; then
@@ -122,7 +128,6 @@ else
 fi
 EOF
 
-chown "$REAL_USER:$REAL_USER" "$BIN_DIR/bongocat"
 chmod +x "$BIN_DIR/bongocat"
 
 # 5. Create desktop shortcut
@@ -165,6 +170,4 @@ SHELL_PATH=$(sudo -u "$REAL_USER" -i ${SHELL:-sh} -c 'echo $PATH' 2>/dev/null ||
 
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]] && [[ ":$USER_PATH:" != *":$BIN_DIR:"* ]] && [[ ":$SHELL_PATH:" != *":$BIN_DIR:"* ]]; then
     echo -e "${RED}Warning: $BIN_DIR is not in your PATH.${NC}"
-    echo -e "Add this line to your .bashrc or .zshrc:"
-    echo -e "${BLUE}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
 fi
