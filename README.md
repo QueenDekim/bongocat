@@ -82,7 +82,7 @@ You can customize the images by modifying the files in `images/kb-mouse/`.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](./LICENCE) file for details.
 
 ## Additional information
 
