@@ -30,10 +30,10 @@ To install Bongo Cat and set it up as a system-wide command, follow these steps:
    ```
 
 2. **Environment Path:**
-   The script installs the `bongocat` command to `~/.local/bin`. Make sure this directory is in your `PATH`. If not, add the following line to your `.bashrc` or `.zshrc`:
+   The script installs the `bongocat` command to `/usr/local/bin`. This directory is usually already in your `PATH`. If it's not, you can add it to your `.bashrc` or `.zshrc`:
 
    ```bash
-   export PATH="$HOME/.local/bin:$PATH"
+   export PATH="/usr/local/bin:$PATH"
    ```
 
 3. **Post-Installation (Linux):**
@@ -56,10 +56,10 @@ To remove Bongo Cat from your system, run the installer with the `-u` flag:
 Run the overlay using the command:
 
 ```bash
-bongocat
+sudo bongocat
 ```
 
-*Note: On Linux, Bongo Cat requires access to input devices. If you haven't restarted your session after installation, it will prompt for `sudo`.*
+*Note: On Linux, Bongo Cat requires root privileges to capture keyboard and mouse events. The application automatically detects your real user's home directory to save settings when run with `sudo`.*
 
 ### Options
 
@@ -79,7 +79,7 @@ bongocat --scale=0.8 --rotate=180 --counter-position=top
 
 ## Customization
 
-You can customize the images by modifying the files in `images/kb-mouse/`. 
+You can customize the images by modifying the files in `/opt/bongocat/images/kb-mouse/`.  
 - `idle.png`: The neutral state.
 - `l.png` and `r.png`: The states for left and right paw actions.
 

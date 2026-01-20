@@ -13,13 +13,17 @@ Options:
 """
 
 import sys, os
+
+# Suppress Qt DBus warnings when running as root/sudo
+os.environ["QT_LOGGING_RULES"] = "qt.qpa.theme.dbus=false;qt.qpa.theme.gnome=false"
+
 import itertools
 import random
 import queue
 import time
 import sqlite3
-from PyQt6.QtWidgets import QApplication, QLabel, QWidget
-from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QTransform
+from PyQt6.QtWidgets import QApplication, QLabel, QWidget, QMenu
+from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor, QTransform, QAction
 from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QObject, QTimer
 
 __all__ = ()
@@ -196,6 +200,37 @@ class BongoCatWindow(QWidget):
         self.counter_label.setText(str(self.click_count))
         self.update_layout()
             
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        
+        fix_action = QAction("Fix device identification", self)
+        fix_action.triggered.connect(self.fix_devices)
+        
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(QApplication.instance().quit)
+        
+        menu.addAction(fix_action)
+        menu.addSeparator()
+        menu.addAction(exit_action)
+        
+        menu.exec(event.globalPos())
+
+    def fix_devices(self):
+        import keyboard
+        import mouse
+        try:
+            keyboard.unhook_all()
+            mouse.unhook_all()
+            # The hooks will be re-established in the start() function's context if we use a signal
+            # but since we are in a different scope, we'll emit a custom signal or just call the hooks again.
+            # However, start() is not a class, so let's use a simpler approach: 
+            # keyboard.hook and mouse.hook are global in the library.
+            # We need to pass the callback functions here.
+            if hasattr(self, 'rehook_callback'):
+                self.rehook_callback()
+        except Exception as e:
+            print(f"Error re-hooking devices: {e}")
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
@@ -271,6 +306,34 @@ def start():
     neutral, responses = load_assets(default, path)
     window = BongoCatWindow(neutral, responses, scale, rotate, counter_pos)
     event_queue = queue.Queue()
+
+    def on_key(event):
+        try:
+            if event.name == 'f4' and keyboard.is_pressed('shift'):
+                QTimer.singleShot(0, app.quit)
+                return
+            if event.event_type == 'down':
+                event_queue.put(('key_down', event.name))
+            else:
+                event_queue.put(('key_up', event.name))
+        except:
+            pass
+
+    def on_mouse(event):
+        if isinstance(event, mouse.ButtonEvent):
+            if event.event_type == 'down':
+                event_queue.put(('mouse_down', event.button))
+            else:
+                event_queue.put(('mouse_up', event.button))
+
+    def rehook():
+        keyboard.unhook_all()
+        mouse.unhook_all()
+        keyboard.hook(on_key)
+        mouse.hook(on_mouse)
+        print("Devices re-identified.")
+
+    window.rehook_callback = rehook
     
     def process_queue():
         current_time = time.time()
@@ -322,25 +385,6 @@ def start():
     wd_timer = QTimer()
     wd_timer.timeout.connect(watchdog)
     wd_timer.start(1000)
-
-    def on_key(event):
-        try:
-            if event.name == 'f4' and keyboard.is_pressed('shift'):
-                QTimer.singleShot(0, app.quit)
-                return
-            if event.event_type == 'down':
-                event_queue.put(('key_down', event.name))
-            else:
-                event_queue.put(('key_up', event.name))
-        except:
-            pass
-
-    def on_mouse(event):
-        if isinstance(event, mouse.ButtonEvent):
-            if event.event_type == 'down':
-                event_queue.put(('mouse_down', event.button))
-            else:
-                event_queue.put(('mouse_up', event.button))
 
     keyboard.hook(on_key)
     mouse.hook(on_mouse)
