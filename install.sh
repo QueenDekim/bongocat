@@ -30,6 +30,11 @@ uninstall() {
         rm -rf "$INSTALL_DIR"
         echo -e "${GREEN}Removed installation directory.${NC}"
     fi
+
+    if [ -f "$REAL_HOME/Desktop/bongocat.desktop" ]; then
+        rm "$REAL_HOME/Desktop/bongocat.desktop"
+        echo -e "${GREEN}Removed desktop shortcut.${NC}"
+    fi
     
     echo -e "${GREEN}Uninstallation complete!${NC}"
     exit 0
@@ -96,7 +101,7 @@ fi
 # Ensure udev rules exist for the input group
 echo -e "${BLUE}Setting up udev rules for input devices...${NC}"
 cat << EOF | sudo tee /etc/udev/rules.d/99-input.rules > /dev/null
-KERNEL=="event*", NAME="input/%k", MODE="0660", GROUP="input"
+KERNEL=="event*", MODE="0660", GROUP="input"
 EOF
 sudo udevadm control --reload-rules && sudo udevadm trigger
 
@@ -120,7 +125,29 @@ EOF
 chown "$REAL_USER:$REAL_USER" "$BIN_DIR/bongocat"
 chmod +x "$BIN_DIR/bongocat"
 
-# 5. Final instructions
+# 5. Create desktop shortcut
+echo -e "${BLUE}Creating desktop shortcut...${NC}"
+DESKTOP_DIR="$REAL_HOME/Desktop"
+if [ -d "$DESKTOP_DIR" ]; then
+    cat << EOF > "$DESKTOP_DIR/bongocat.desktop"
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Bongo Cat
+Comment=Bongo Cat Overlay
+Exec="$BIN_DIR/bongocat"
+Icon=$INSTALL_DIR/images/kb-mouse/cat.png
+Terminal=false
+Categories=Utility;Game;
+EOF
+    chown "$REAL_USER:$REAL_USER" "$DESKTOP_DIR/bongocat.desktop"
+    chmod +x "$DESKTOP_DIR/bongocat.desktop"
+    echo -e "${GREEN}Desktop shortcut created.${NC}"
+else
+    echo -e "${RED}Warning: Desktop directory not found. Skipping shortcut creation.${NC}"
+fi
+
+# 6. Final instructions
 echo -e "${GREEN}Installation complete!${NC}"
 echo -e "You can now run Bongo Cat using the command: ${BLUE}bongocat${NC}"
 
