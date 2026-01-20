@@ -63,12 +63,13 @@ bongocat
 
 ### Options
 
-- `--scale=<n>`: Scale factor (0-1) [default: 1.0]
-- `--rotate=<deg>`: Rotation in degrees (-360 to 360) [default: 0]
+- `-s`, `--scale=<n>`: Scale factor (0-1) [default: 1.0]
+- `-r`, `--rotate=<deg>`: Rotation in degrees (-360 to 360) [default: 0]
+- `-p`, `--counter-position=<pos>`: Position of the counter (`top` or `bottom`) [default: bottom]
 
 Example:
 ```bash
-bongocat --scale=0.8 --rotate=15
+bongocat --scale=0.8 --rotate=180 --counter-position=top
 ```
 
 ### Controls

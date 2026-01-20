@@ -2,13 +2,14 @@
 """Bongo Cat Overlay
 
 Usage:
-    bongocat [--scale=<n>] [--rotate=<deg>]
-    bongocat -h | --help
+    bongocat.py [options]
+    bongocat.py -h | --help
 
 Options:
-    -h --help           Show this screen
-    --scale=<n>         Scale factor (0-1) [default: 1.0]
-    --rotate=<deg>      Rotation in degrees (-360 to 360) [default: 0]
+    -h --help                    Show this screen
+    -s --scale=<n>               Scale factor (0-1) [default: 1.0]
+    -r --rotate=<deg>            Rotation in degrees (-360 to 360) [default: 0]
+    -p --counter-position=<pos>  Position of the counter (top|bottom) [default: bottom]
 """
 
 import sys, os
@@ -24,12 +25,23 @@ from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QObject, QTimer
 __all__ = ()
 
 class BongoCatWindow(QWidget):
-    def __init__(self, neutral_pixmap, responses_pixmaps, scale, rotate):
+    def __init__(self, neutral_pixmap, responses_pixmaps, scale, rotate, counter_pos):
         super().__init__()
-        self.db_path = os.path.join(os.path.expanduser("~"), ".bongocat_stats.db")
+        
+        # Determine the database path, respecting the real user if running with sudo
+        home = os.path.expanduser("~")
+        if os.environ.get("SUDO_USER") and os.name == 'posix':
+            try:
+                import pwd
+                home = pwd.getpwnam(os.environ.get("SUDO_USER")).pw_dir
+            except (ImportError, KeyError):
+                pass
+        
+        self.db_path = os.path.join(home, ".bongocat_stats.db")
         self.init_db()
         self.scale_factor = scale
         self.rotation = rotate
+        self.counter_pos = counter_pos
         
         # Pre-process pixmaps with scale and rotation
         self.neutral = self.process_pixmap(neutral_pixmap)
@@ -149,11 +161,16 @@ class BongoCatWindow(QWidget):
         wh = int(self.max_h + ch - overlap)        
         self.setFixedSize(ww, wh)
         
-        self.image_label.resize(int(iw), int(ih))        
-        self.image_label.move(0, 0)
-        self.image_label.raise_()
+        self.image_label.resize(int(iw), int(ih))
         
-        self.counter_label.move((ww - cw) // 2, self.max_h - overlap)
+        if self.counter_pos == 'top':
+            self.counter_label.move((ww - cw) // 2, 0)
+            self.image_label.move(0, ch - overlap)
+        else:
+            self.image_label.move(0, 0)
+            self.counter_label.move((ww - cw) // 2, self.max_h - overlap)
+            
+        self.image_label.raise_()
             
     def update_display(self):
         img = self.neutral
@@ -227,19 +244,24 @@ def start():
     path = 'images/kb-mouse'
     
     try:
-        scale = float(arguments['--scale'])
+        scale = float(arguments['--scale'] or 1.0)
     except (ValueError, TypeError):
         print(f"Warning: Invalid scale value '{arguments['--scale']}'. Using default: 1.0")
         scale = 1.0
 
     try:
-        rotate = float(arguments['--rotate'])
+        rotate = float(arguments['--rotate'] or 0.0)
     except (ValueError, TypeError):
         print(f"Warning: Invalid rotate value '{arguments['--rotate']}'. Using default: 0")
         rotate = 0.0
+
+    counter_pos = (arguments['--counter-position'] or 'bottom').lower()
+    if counter_pos not in ['top', 'bottom']:
+        print(f"Warning: Invalid counter position '{counter_pos}'. Using default: bottom")
+        counter_pos = 'bottom'
     
     neutral, responses = load_assets(default, path)
-    window = BongoCatWindow(neutral, responses, scale, rotate)
+    window = BongoCatWindow(neutral, responses, scale, rotate, counter_pos)
     event_queue = queue.Queue()
     
     def process_queue():
