@@ -56,7 +56,9 @@ mkdir -p "$BIN_DIR"
 # Configure python to have permissions to read raw input without global sudo
 # We use setcap to allow the venv python to access input devices
 echo -e "${BLUE}Requesting sudo to set capabilities for the virtual environment...${NC}"
-sudo setcap 'cap_dac_override,cap_sys_rawio,cap_net_raw+ep' "$INSTALL_DIR/.venv/bin/python3"
+# We need to resolve the symlink because setcap doesn't work on symlinks
+REAL_PYTHON=$(readlink -f "$INSTALL_DIR/.venv/bin/python3")
+sudo setcap 'cap_dac_override,cap_sys_rawio,cap_net_raw+ep' "$REAL_PYTHON"
 
 cat << EOF > "$BIN_DIR/bongocat"
 #!/bin/bash
