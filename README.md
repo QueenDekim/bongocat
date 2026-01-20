@@ -41,7 +41,7 @@ To install Bongo Cat and set it up as a system-wide command, follow these steps:
 
 ## Preview
 
-![cat](./assets/preview/cat.mp4)
+![cat](./assets/preview/cat.gif)
 
 ## Uninstallation
 
