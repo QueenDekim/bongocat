@@ -244,7 +244,19 @@ class BongoCatWindow(QWidget):
             event.accept()
 
 def load_assets(default, path):
-    directory = os.path.join(os.getcwd(), path)
+    # Determine the base directory for assets
+    # If running as a bundled executable (PyInstaller), use _MEIPASS
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        # On Linux, if installed system-wide, use /opt/bongocat
+        # Otherwise, use current working directory
+        if os.name == 'posix' and os.path.exists('/opt/bongocat') and not os.path.exists(os.path.join(os.getcwd(), path)):
+            base_path = '/opt/bongocat'
+        else:
+            base_path = os.getcwd()
+
+    directory = os.path.join(base_path, path)
     responses = {}
     neutral = None
     extensions = ('.png', '.jpg', '.jpeg')
